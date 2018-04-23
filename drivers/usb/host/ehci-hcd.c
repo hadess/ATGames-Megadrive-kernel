@@ -591,11 +591,16 @@ static int ehci_run (struct usb_hcd *hcd)
 	 */
 	hcc_params = ehci_readl(ehci, &ehci->caps->hcc_params);
 	if (HCC_64BIT_ADDR(hcc_params)) {
-		ehci_writel(ehci, 0, &ehci->regs->segment);
-#if 0
-// this is deeply broken on almost all architectures
+#ifdef CONFIG_ARM64
+		ehci_writel(ehci, ehci->periodic_dma >> 32, &ehci->regs->segment);
+		/*
+		 * this is deeply broken on almost all architectures
+		 * but arm64 can use it so enable it
+		 */
 		if (!dma_set_mask(hcd->self.controller, DMA_BIT_MASK(64)))
 			ehci_info(ehci, "enabled 64bit DMA\n");
+#else
+		ehci_writel(ehci, 0, &ehci->regs->segment);
 #endif
 	}
 
@@ -1268,6 +1273,11 @@ MODULE_LICENSE ("GPL");
 #define	PLATFORM_DRIVER		ehci_hcd_tilegx_driver
 #endif
 
+#ifdef CONFIG_USB_EHCI_RKHSIC
+#include "ehci-rkhsic.c"
+#define ROCKCHIP_PLATFORM_DRIVER         ehci_rkhsic_driver
+#endif
+
 #ifdef CONFIG_USB_EHCI_HCD_PMC_MSP
 #include "ehci-pmcmsp.c"
 #define	PLATFORM_DRIVER		ehci_hcd_msp_driver
@@ -1343,7 +1353,18 @@ static int __init ehci_hcd_init(void)
 	if (retval < 0)
 		goto clean4;
 #endif
+
+#ifdef ROCKCHIP_PLATFORM_DRIVER
+	retval = platform_driver_register(&ROCKCHIP_PLATFORM_DRIVER);
+	if (retval < 0)
+		goto clean5;
+#endif
 	return retval;
+
+#ifdef ROCKCHIP_PLATFORM_DRIVER
+	platform_driver_unregister(&ROCKCHIP_PLATFORM_DRIVER);
+clean5:
+#endif
 
 #ifdef XILINX_OF_PLATFORM_DRIVER
 	/* platform_driver_unregister(&XILINX_OF_PLATFORM_DRIVER); */
@@ -1373,6 +1394,9 @@ module_init(ehci_hcd_init);
 
 static void __exit ehci_hcd_cleanup(void)
 {
+#ifdef ROCKCHIP_PLATFORM_DRIVER
+	platform_driver_unregister(&ROCKCHIP_PLATFORM_DRIVER);
+#endif
 #ifdef XILINX_OF_PLATFORM_DRIVER
 	platform_driver_unregister(&XILINX_OF_PLATFORM_DRIVER);
 #endif

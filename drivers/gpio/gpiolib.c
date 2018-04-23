@@ -16,6 +16,10 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/gpio.h>
 
+#include <linux/rockchip/iomap.h>
+#include <linux/rockchip/grf.h>
+
+
 /* Optional implementation infrastructure for GPIO interfaces.
  *
  * Platforms may want to use this if they tend to use very many GPIOs
@@ -79,6 +83,13 @@ static LIST_HEAD(gpio_chips);
 #ifdef CONFIG_GPIO_SYSFS
 static DEFINE_IDR(dirent_idr);
 #endif
+/****
+llx add bank gpio control
+****/
+extern int rockchip_bank_gpio_get(struct gpio_chip *gc);
+extern void rockchip_bank_gpio_set(struct gpio_chip *gc,int value, unsigned int mask);
+extern void rockchip_bank_gpio_setdir(struct gpio_chip *gc,int value, unsigned int mask);
+extern void rockchip_gpio_setmux_my(struct gpio_chip *chip, int pinnum);
 
 /*
  * Internal gpiod_* API using descriptors instead of the integer namespace.
@@ -136,7 +147,7 @@ static struct gpio_desc *gpio_to_desc(unsigned gpio)
  */
 static int desc_to_gpio(const struct gpio_desc *desc)
 {
-	return desc->chip->base + gpio_chip_hwgpio(desc);
+	return desc - &gpio_desc[0];
 }
 
 
@@ -1214,14 +1225,13 @@ int gpiochip_add(struct gpio_chip *chip)
 		}
 	}
 
+	spin_unlock_irqrestore(&gpio_lock, flags);
+
 #ifdef CONFIG_PINCTRL
 	INIT_LIST_HEAD(&chip->pin_ranges);
 #endif
 
 	of_gpiochip_add(chip);
-
-unlock:
-	spin_unlock_irqrestore(&gpio_lock, flags);
 
 	if (status)
 		goto fail;
@@ -1235,6 +1245,9 @@ unlock:
 		chip->label ? : "generic");
 
 	return 0;
+
+unlock:
+	spin_unlock_irqrestore(&gpio_lock, flags);
 fail:
 	/* failures here can mean systems won't boot... */
 	pr_err("gpiochip_add: gpios %d..%d (%s) failed to register\n",
@@ -1854,7 +1867,124 @@ int __gpio_get_value(unsigned gpio)
 {
 	return gpiod_get_value(gpio_to_desc(gpio));
 }
+/****
+llx added for gpio bank get value
+****/
+static int gpiod_bank_get_value(const struct gpio_desc *desc){
+	struct gpio_chip	*chip;
+	int value;
+	int offset;
+	//printk("%s\n",__func__);
+	if (!desc)
+		return 0;
+	chip = desc->chip;
+	/* Should be using gpio_get_value_cansleep() */
+	WARN_ON(chip->can_sleep);
+	value=rockchip_bank_gpio_get(chip);
+	//printk("%s %d\n",__func__,value);
+
+	return value;
+}
+/****
+llx added for gpio bank get value
+0,1,2¡ä¨²¡À¨ª gpio0,gpio1,gpio2
+****/
+
+int gpio_bank_get_value(unsigned gpio){
+	//printk("%s %d\n",__func__,gpio);
+	if(gpio>2){
+		gpio=2;
+	}
+	return gpiod_bank_get_value(gpio_to_desc(gpio*32));
+}
+/****
+llx added for gpio bank set value
+****/
+static int gpiod_bank_set_value(const struct gpio_desc *desc,int value, unsigned int mask)
+{
+	struct gpio_chip	*chip;
+	int offset;
+	//printk("%s\n",__func__);
+	if (!desc)
+		return 0;
+	chip = desc->chip;
+	/* Should be using gpio_get_value_cansleep() */
+	WARN_ON(chip->can_sleep);
+	rockchip_bank_gpio_set(chip,value, mask);
+	//printk("%s %d\n",__func__,value);
+
+	return value;
+}
+
+static int gpiod_bank_set_direction(const struct gpio_desc *desc,int dir, unsigned int mask)
+{
+	struct gpio_chip	*chip;
+	int offset;
+	//printk("%s\n",__func__);
+	if (!desc)
+		return 0;
+	chip = desc->chip;
+	/* Should be using gpio_get_value_cansleep() */
+	WARN_ON(chip->can_sleep);
+	rockchip_bank_gpio_setdir(chip,dir, mask);
+	//printk("%s %d\n",__func__,dir);
+
+	return dir;
+}
+
+
+/****
+llx added for gpio bank get value
+0,1,2¡ä¨²¡À¨ª gpio0,gpio1,gpio2
+****/
+int gpio_bank_set_value(unsigned gpio,int value, unsigned int mask)
+{
+	//printk("%s %d\n",__func__,gpio);
+	if(gpio>2){
+		//gpio=2;
+		printk(" error para: gpio should <=2!!!");
+		return -1;
+	}
+	return gpiod_bank_set_value(gpio_to_desc(gpio*32),value, mask);
+}
+
+/*
+** 0 --> input, 1 --> output 
+*/
+int gpio_bank_set_direction(unsigned gpio,int dir, unsigned int mask)
+{
+	//printk("%s %d\n",__func__,gpio);
+	if(gpio>2){
+		//gpio=2;
+		printk(" error para: gpio should <=2!!!");
+		return -1;
+	}
+	return gpiod_bank_set_direction(gpio_to_desc(gpio*32),dir, mask);
+}
+
+int gpio_set_pin_mux_my(unsigned group, unsigned pin_num)
+{
+	struct gpio_chip	*chip;
+
+	if(group>2){
+		//gpio=2;
+		printk("gpio_set_pin_mux_my: error para: gpio should <=2!!!");
+		return -1;
+	}
+	chip = gpio_to_desc(group*32)->chip;
+	WARN_ON(chip->can_sleep);
+	rockchip_gpio_setmux_my(chip, pin_num);
+
+	return 0;
+}
+
+
 EXPORT_SYMBOL_GPL(__gpio_get_value);
+EXPORT_SYMBOL_GPL(gpio_bank_get_value);
+EXPORT_SYMBOL_GPL(gpio_bank_set_value);
+EXPORT_SYMBOL_GPL(gpio_bank_set_direction);
+EXPORT_SYMBOL_GPL(gpio_set_pin_mux_my);
+
 
 /*
  *  _gpio_set_open_drain_value() - Set the open drain gpio's value.

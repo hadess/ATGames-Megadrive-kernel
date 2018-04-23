@@ -19,8 +19,6 @@ typedef elf_greg_t elf_gregset_t[ELF_NGREG];
 
 typedef struct user_fp elf_fpregset_t;
 
-#define EM_ARM	40
-
 #define EF_ARM_EABI_MASK	0xff000000
 #define EF_ARM_EABI_UNKNOWN	0x00000000
 #define EF_ARM_EABI_VER1	0x01000000
@@ -50,6 +48,7 @@ typedef struct user_fp elf_fpregset_t;
 #define R_ARM_NONE		0
 #define R_ARM_PC24		1
 #define R_ARM_ABS32		2
+#define R_ARM_RELATIVE		23
 #define R_ARM_CALL		28
 #define R_ARM_JUMP24		29
 #define R_ARM_V4BX		40
